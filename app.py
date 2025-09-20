@@ -26,6 +26,8 @@ from utils.meta_generator import generate_meta_and_faq
 from utils.exporters import to_docx, to_pdf
 from utils.heading_tools import enforce_outline, default_required
 from utils.enhanced_fix import ensure_disclaimer
+from utils.text_cleanup import remove_filler_phrases
+from utils.heading_tools import normalize_methodology_heading
 
 PROMPTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts")
 
@@ -161,6 +163,7 @@ if gen_outline:
             # Enforce required headings
             req_h2, req_h3 = default_required(symbol)
             outline = enforce_outline(outline, req_h2, req_h3)
+            outline = normalize_methodology_heading(outline)
             st.session_state["outline"] = outline
             st.success("تم توليد المخطط بنجاح (مع فرض العناوين الأساسية).")
             st.text_area("📋 المخطط الناتج", value=st.session_state["outline"], height=300, key="outline_area")
@@ -337,6 +340,7 @@ if exp_docx or exp_pdf:
         if not final_text or not final_text.strip():
             st.warning("لا يوجد نص للتصدير.")
         else:
+            final_text = remove_filler_phrases(final_text)
             final_text = ensure_disclaimer(final_text)
             os.makedirs("exports", exist_ok=True)
             if exp_docx:
