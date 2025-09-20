@@ -61,6 +61,8 @@ def _init_state():
         "quality_gate_json": "",
         "balanced": "",
         "people_first": "",
+        "cleaned": "",
+        "expanded": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -134,6 +136,13 @@ do_balance  = b9.button("⚖️ Balance Rewriter")
 do_human    = b10.button("👤 Human Touch")
 exp_docx    = b11.button("⬇️ تصدير DOCX")
 exp_pdf     = b12.button("⬇️ تصدير PDF")
+
+
+st.divider()
+c1, c2 = st.columns(2)
+do_clean  = c1.button("🧽 تنظيف الحسّي/المجازي")
+do_expand = c2.button("🧩 توسيع الحالات")
+
 
 # Defensive guard
 try:
@@ -332,6 +341,50 @@ if do_human:
             st.text_area("👤 النص بعد اللمسة البشرية", value=st.session_state["humanized"], height=400, key="humanized_area")
     except Exception as e:
         st.error(f"فشل تطبيق اللمسة البشرية: {e}")
+
+
+# Clean sensory/metaphorical language
+if do_clean:
+    try:
+        base = (
+            st.session_state.get("humanized")
+            or st.session_state.get("balanced")
+            or st.session_state.get("reviewed")
+            or st.session_state.get("draft")
+            or article_area
+        )
+        if not base or not base.strip():
+            st.warning("لا يوجد نص للتنظيف.")
+        else:
+            cleaned = remove_filler_phrases(base)
+            st.session_state["cleaned"] = cleaned.strip()
+            st.success("تم تنظيف العبارات الحسية/المجازية.")
+            st.text_area("🧽 النص بعد التنظيف", value=st.session_state["cleaned"], height=400, key="cleaned_area")
+    except Exception as e:
+        st.error(f"فشل التنظيف: {e}")
+
+# Expand "الحالات المؤثرة" to cover missing money scenarios
+if do_expand:
+    try:
+        base = (
+            st.session_state.get("cleaned")
+            or st.session_state.get("humanized")
+            or st.session_state.get("balanced")
+            or st.session_state.get("reviewed")
+            or st.session_state.get("draft")
+            or article_area
+        )
+        if not base or not base.strip():
+            st.warning("لا يوجد نص لتوسيعه.")
+        else:
+            tpl = _read_prompt("cases_expander.txt")
+            prompt = _format_prompt(tpl, article=base)
+            expanded = llm(prompt, temperature=0.25, max_tokens=max_tokens).strip()
+            st.session_state["expanded"] = expanded
+            st.success("تم توسيع قسم الحالات المؤثرة.")
+            st.text_area("🧩 النص بعد توسيع الحالات", value=st.session_state["expanded"], height=400, key="expanded_area")
+    except Exception as e:
+        st.error(f"فشل توسيع الحالات: {e}")
 
 # Export DOCX / PDF (with disclaimer)
 if exp_docx or exp_pdf:
