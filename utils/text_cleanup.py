@@ -4,7 +4,7 @@
 Expanded filler/metaphor filter.
 - Rewrites ANY sentence containing "كأن" (simile) into a pragmatic line.
 - Normalizes common rhetorical imagery (بحر من..، جبل من..، بريق الأمل..).
-Use: remove_filler_phrases(text) before export.
+Use: remove_filler_phrases(text) before export or via the "تنظيف الحسّي/المجازي" button.
 """
 import re
 from typing import Tuple, Dict
@@ -23,25 +23,15 @@ REPLACEMENTS = {
 _SENT_SPLIT = re.compile(r"([^\.!\?؟؛\n]+[\.!\?؟؛]?)", re.UNICODE)
 
 def _rewrite_kaanna_sentence(sentence: str) -> str:
-    """
-    Convert sentences containing 'كأن' into pragmatic interpretation.
-    Example: 'كأن الظلال تلاحقه.' -> 'قد يرمز ذلك إلى شعور بالخوف أو فقدان السيطرة.'
-    """
+    """Convert sentences containing 'كأن' into pragmatic interpretation."""
     s = sentence.strip()
     if not s:
         return s
-    # heuristic: keep trailing punctuation
-    trail = ""
-    if s and s[-1] in ".!؟؛…":
-        trail = s[-1]
-    # core rewrite
+    trail = s[-1] if s and s[-1] in ".!؟؛…" else ""
     return "قد يشير ذلك إلى انطباع أو قياس نفسي يرتبط بسياق الرائي" + (trail or "")
 
-def _aggressive_simile_pass(text: str) -> Tuple[str, int]:
-    """
-    Replace ANY sentence containing 'كأن' with a pragmatic rewrite.
-    Returns (new_text, count)
-    """
+def _aggressive_simile_pass(text: str):
+    """Replace ANY sentence containing 'كأن' with a pragmatic rewrite. Returns (new_text, count)."""
     parts = _SENT_SPLIT.findall(text or "")
     out = []
     n = 0
@@ -66,10 +56,10 @@ def remove_filler_phrases(text: str) -> str:
     t = re.sub(r"\n{3,}", "\n\n", t)
     return t
 
-def remove_with_report(text: str) -> Tuple[str, Dict[str, int]]:
+def remove_with_report(text: str):
     """Return cleaned text and a report of applied replacements, including 'كأن' counter."""
     t = text or ""
-    report: Dict[str, int] = {}
+    report = {}
 
     # Aggressive 'كأن' pass
     t, n_kaan = _aggressive_simile_pass(t)
