@@ -1,7 +1,8 @@
 # app.py
 # -*- coding: utf-8 -*-
 """
-Streamlit app for generating Arabic dream-interpretation articles with People-first, methodology, and E-E-A-T.
+Streamlit app for generating Arabic dream-interpretation articles (People-first + Methodology + E-E-A-T).
+
 Includes:
 - Outline generation with enforced mandatory headings (H2/H3)
 - People-first Summary (3 lines)
@@ -13,21 +14,21 @@ Includes:
 - JSON-LD (Article + FAQPage + Author + reviewedBy)
 - Balance Rewriter
 - Human Touch
+- NEW: Clean sensory/metaphorical language
+- NEW: Expand cases for money scenarios
 - Export DOCX/PDF with mandatory disclaimer
 """
-
 import os
 import json
 import streamlit as st
 
 from utils.openai_client import llm
 from utils.quality_checks import quality_report
-from utils.meta_generator import generate_meta_and_faq
+from utils.meta_generator import generate_meta_and_faq, build_jsonld
 from utils.exporters import to_docx, to_pdf
-from utils.heading_tools import enforce_outline, default_required
+from utils.heading_tools import enforce_outline, default_required, normalize_methodology_heading
 from utils.enhanced_fix import ensure_disclaimer
 from utils.text_cleanup import remove_filler_phrases
-from utils.heading_tools import normalize_methodology_heading
 
 PROMPTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts")
 
@@ -88,6 +89,7 @@ with st.sidebar:
         "prompts/draft.txt\n"
         "prompts/review.txt\n"
         "prompts/meta_faq.txt\n"
+        "prompts/cases_expander.txt\n"
         "prompts/human_touch.txt\n"
         "prompts/quality_gate.txt\n"
         "prompts/consistency_check.txt\n"
@@ -113,10 +115,10 @@ with st.sidebar:
 
 col1, col2 = st.columns([1,1])
 with col1:
-    symbol = st.text_input("🔣 الرمز (symbol)", key="inp_symbol", placeholder="مثال: الذهب، المطر، البحر")
-    primary_kw = st.text_input("🔑 الكلمة المفتاحية الرئيسية (primary_kw)", key="inp_pk", placeholder="مثال: تفسير حلم الذهب")
+    symbol = st.text_input("🔣 الرمز (symbol)", key="inp_symbol", placeholder="مثال: المال، الذهب، المطر")
+    primary_kw = st.text_input("🔑 الكلمة المفتاحية الرئيسية (primary_kw)", key="inp_pk", placeholder="مثال: تفسير حلم المال")
 with col2:
-    related_kws = st.text_area("🧩 الكلمات المرتبطة (related_kws)", key="inp_rk", placeholder="افصل بينها بفواصل، مثال: تفسير حلم الذهب للعزباء، رؤية الذهب للمتزوجة")
+    related_kws = st.text_area("🧩 الكلمات المرتبطة (related_kws)", key="inp_rk", placeholder="افصل بينها بفواصل، مثال: تفسير حلم المال للعزباء، رؤية المال للمتزوجة")
 
 article_area = st.text_area("📝 مساحة النص/المسودات", value=st.session_state.get("draft", ""), height=300, key="article_area")
 
@@ -137,18 +139,10 @@ do_human    = b10.button("👤 Human Touch")
 exp_docx    = b11.button("⬇️ تصدير DOCX")
 exp_pdf     = b12.button("⬇️ تصدير PDF")
 
-
 st.divider()
 c1, c2 = st.columns(2)
 do_clean  = c1.button("🧽 تنظيف الحسّي/المجازي")
 do_expand = c2.button("🧩 توسيع الحالات")
-
-
-# Defensive guard
-try:
-    gen_outline; do_pfs; gen_draft; do_review; do_quality; do_qgate; do_meta; do_jsonld; do_balance; do_human; exp_docx; exp_pdf
-except NameError:
-    gen_outline = do_pfs = gen_draft = do_review = do_quality = do_qgate = do_meta = do_jsonld = do_balance = do_human = exp_docx = exp_pdf = False
 
 # Generate Outline
 if gen_outline:
@@ -169,7 +163,6 @@ if gen_outline:
                 psych_ref=psych_ref,
             )
             outline = llm(prompt, temperature=temp, max_tokens=min(max_tokens, 1200)).strip()
-            # Enforce required headings
             req_h2, req_h3 = default_required(symbol)
             outline = enforce_outline(outline, req_h2, req_h3)
             outline = normalize_methodology_heading(outline)
@@ -287,8 +280,7 @@ if do_meta:
             meta = generate_meta_and_faq(article, primary_kw)
             st.session_state["meta_json"] = json.dumps(meta, ensure_ascii=False, indent=2)
             st.code(st.session_state["meta_json"], language="json")
-            if "_warning" in meta:
-                st.info(meta["_warning"])
+            # Optional: FAQ quality check (requires manual call to utils if desired)
     except Exception as e:
         st.error(f"فشل توليد Meta/FAQ: {e}")
 
@@ -298,7 +290,6 @@ if do_jsonld:
         if not st.session_state.get("meta_json"):
             st.warning("الرجاء توليد Meta/FAQ أولًا.")
         else:
-            from utils.meta_generator import build_jsonld
             meta = json.loads(st.session_state["meta_json"])
             author = {"name": author_name, "credentials": author_credentials}
             reviewer = {"name": reviewed_by}
@@ -341,7 +332,6 @@ if do_human:
             st.text_area("👤 النص بعد اللمسة البشرية", value=st.session_state["humanized"], height=400, key="humanized_area")
     except Exception as e:
         st.error(f"فشل تطبيق اللمسة البشرية: {e}")
-
 
 # Clean sensory/metaphorical language
 if do_clean:
@@ -386,14 +376,21 @@ if do_expand:
     except Exception as e:
         st.error(f"فشل توسيع الحالات: {e}")
 
-# Export DOCX / PDF (with disclaimer)
+# Export DOCX / PDF (prefer expanded/cleaned; add disclaimer)
 if exp_docx or exp_pdf:
     try:
-        final_text = st.session_state.get("humanized") or st.session_state.get("balanced") or st.session_state.get("reviewed") or st.session_state.get("draft") or article_area
+        final_text = (
+            st.session_state.get("expanded")
+            or st.session_state.get("cleaned")
+            or st.session_state.get("humanized")
+            or st.session_state.get("balanced")
+            or st.session_state.get("reviewed")
+            or st.session_state.get("draft")
+            or article_area
+        )
         if not final_text or not final_text.strip():
             st.warning("لا يوجد نص للتصدير.")
         else:
-            final_text = remove_filler_phrases(final_text)
             final_text = ensure_disclaimer(final_text)
             os.makedirs("exports", exist_ok=True)
             if exp_docx:
