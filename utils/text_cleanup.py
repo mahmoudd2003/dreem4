@@ -1,40 +1,89 @@
 # utils/text_cleanup.py
 # -*- coding: utf-8 -*-
 """
-Filters to reduce flowery/metaphorical filler language.
-Use remove_filler_phrases(text) before exporting.
+Expanded filler/metaphor filter.
+- Rewrites ANY sentence containing "كأن" (simile) into a pragmatic line.
+- Normalizes common rhetorical imagery (بحر من..، جبل من..، بريق الأمل..).
+Use: remove_filler_phrases(text) before export.
 """
 import re
 from typing import Tuple, Dict
 
-# Common metaphorical/filler patterns and pragmatic replacements
+# Targeted imagery replacements (case-insensitive)
 REPLACEMENTS = {
-    # "كأن ... الأمل"
-    r"كأن[^.\n\r]{0,60}الأمل": "قد يعكس ذلك شعورًا بالتفاؤل",
-    # heaviness on chest
-    r"كأن[^.\n\r]{0,80}ثقل[^.\n\r]{0,40}(?:صدره|على صدره|على صدرها)": "قد يشير ذلك إلى ضغط نفسي أو قلق",
-    # shadows chasing
-    r"كأن[^.\n\r]{0,80}الظلال[^.\n\r]{0,40}(?:تلاحق(?:ه|ها)|تتبعه)": "قد يرمز ذلك إلى خوفٍ من فقدان السيطرة",
-    # generic phrases
-    r"\bبريق\s*الأمل\b": "قد يشير إلى عودة الحافز أو تحسّن المزاج",
+    r"\bبريق\s*الأمل\b": "قد يشير ذلك إلى عودة الحافز أو تحسّن المزاج",
     r"\bثقل\s*العالم\b": "قد يدل على أعباء ومسؤوليات متراكمة",
     r"\bغرق(?:ت)?\s*في\s*بحر\s*من\s*الأفكار\b": "قد يعني اجترارًا فكريًا زائدًا",
+    r"\bجبل\s*من\s*الهموم\b": "قد يدل على تراكم الضغوط",
+    r"\bسيول\s*من\s*المشاعر\b": "قد يعكس فيضًا عاطفيًا صعب التنظيم",
+    r"\bظلال\s*الخوف\b": "قد يرمز إلى قلقٍ مستمر",
 }
 
+# Sentence splitter (Arabic + Latin punctuation)
+_SENT_SPLIT = re.compile(r"([^\.!\?؟؛\n]+[\.!\?؟؛]?)", re.UNICODE)
+
+def _rewrite_kaanna_sentence(sentence: str) -> str:
+    """
+    Convert sentences containing 'كأن' into pragmatic interpretation.
+    Example: 'كأن الظلال تلاحقه.' -> 'قد يرمز ذلك إلى شعور بالخوف أو فقدان السيطرة.'
+    """
+    s = sentence.strip()
+    if not s:
+        return s
+    # heuristic: keep trailing punctuation
+    trail = ""
+    if s and s[-1] in ".!؟؛…":
+        trail = s[-1]
+    # core rewrite
+    return "قد يشير ذلك إلى انطباع أو قياس نفسي يرتبط بسياق الرائي" + (trail or "")
+
+def _aggressive_simile_pass(text: str) -> Tuple[str, int]:
+    """
+    Replace ANY sentence containing 'كأن' with a pragmatic rewrite.
+    Returns (new_text, count)
+    """
+    parts = _SENT_SPLIT.findall(text or "")
+    out = []
+    n = 0
+    for sent in parts:
+        if "كأن" in sent:
+            out.append(_rewrite_kaanna_sentence(sent))
+            n += 1
+        else:
+            out.append(sent)
+    return "".join(out), n
+
 def remove_filler_phrases(text: str) -> str:
-    """Replace metaphorical clichés with pragmatic, interpretable sentences."""
+    """Aggressive cleanup: replace similes + imagery clichés with pragmatic lines."""
     t = text or ""
+    # 1) Aggressive 'كأن' pass
+    t, _ = _aggressive_simile_pass(t)
+    # 2) Imagery replacements
     for pattern, repl in REPLACEMENTS.items():
         t = re.sub(pattern, repl, t, flags=re.IGNORECASE | re.UNICODE)
+    # 3) Minor whitespace tidy
+    t = re.sub(r"[ \t]+\n", "\n", t)
+    t = re.sub(r"\n{3,}", "\n\n", t)
     return t
 
 def remove_with_report(text: str) -> Tuple[str, Dict[str, int]]:
-    """Return cleaned text and a usage report of which patterns were replaced."""
+    """Return cleaned text and a report of applied replacements, including 'كأن' counter."""
     t = text or ""
-    counts = {}
+    report: Dict[str, int] = {}
+
+    # Aggressive 'كأن' pass
+    t, n_kaan = _aggressive_simile_pass(t)
+    if n_kaan:
+        report["kaanna_sentences_rewritten"] = n_kaan
+
+    # Imagery replacements with counts
     for pattern, repl in REPLACEMENTS.items():
         new_t, n = re.subn(pattern, repl, t, flags=re.IGNORECASE | re.UNICODE)
         if n:
-            counts[pattern] = n
+            report[pattern] = n
         t = new_t
-    return t, counts
+
+    # Tidy
+    t = re.sub(r"[ \t]+\n", "\n", t)
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    return t, report
